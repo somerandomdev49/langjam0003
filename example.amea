@@ -1,42 +1,40 @@
 main : output_file {
-	(main) -> {
-        output_file << "main"
-		(create dir) "build" -> fs [1]
-
-        (all files in) "src" -> fs [0]
-        (search exec) "clang" -> os [0]
-        (search exec) "ld.lld" -> os [0]
-        
-        [0] (prepare commands) %1 %2 %0 -> . [1]
-        [1] (run commands) %1 %2
+	(main) {
+        output_file = "main" [0];
+		(create dir) "build" >> fs [1];
+        (all files in) "src" >> fs [0];
+        (search exec) "clang" >> os [0];
+        (search exec) "ld.lld" >> os [0];
+        [0] (prepare commands) %1 %2 %0 >> . [1];
+        [1] (run commands) %1 %2;
 	}
 
-    (prepare commands) cc ld files -> {
-        (empty) -> list [0]
-        (empty) -> list [0]
+    (prepare commands) cc ld files {
+        (empty) >> list [0];
+        (empty) >> list [0];
         [0] |ofiles commands| {
             for files |file ofiles| {
-                (+) "build/" file ".o" -> str [0]
-                [0] (append) %0 ofiles -> list
-                [0] (+) cc " -c " file " -o " %0 -> str [=]
-                [=] (append) %0 commands -> list
-            } [0]
-            [0] (join) " " ofiles -> list [=]
-            [=] (+) ld " " %0 " -o " output_file
-            (@) commands -> ^
-        } %0 %1 [=] (@) %0 -> ^
+                (+) "build/" file ".o" >> str [0];
+                [0] (append) %0 ofiles >> list;
+                [0] (+) cc " -c " file " -o " %0 >> str,
+                (append) %0 commands >> list;
+            }
+            (join) " " ofiles >> list,
+            (+) ld " " %0 " -o " output_file;
+            << commands;
+        } %0 %1, << %0
     }
 
-    (run commands) commands -> {
+    (run commands) commands {
         for commands |command| {
-            (run) command -> os [=]
-            (!=) %0 0 -> num [=] if %0 |result| {
-                [=] (tostr) result -> num
-                [=] (+) "command " command " -> " %0 -> str 
-                [=] ( print ) "command" -> io
-                [=] ( exit ) 1 -> sys
-            } %0
-        }
+            (run) command >> os,
+            (!=) %0 0 >> num, if %0 |result| {
+                {tostr} result >> num,
+                (+) "command " command " -> " %0 >> str,
+                (print) "command" >> io,
+                (exit) 1 >> sys;
+            } %0;
+        };
     }
 }
 
