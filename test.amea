@@ -1,14 +1,9 @@
-io {
-}
 
-    (print) x {
-        (to string) x >> type x, echo %0;
-    }
 main {
-    (main) a, b, c {
+    (main) a b c {
         (print) a >> io [0];
-        (print) b >> io [1];
+        [2] (print) b >> io [1];
         (print) c >> io [2];
-        [0, 1, 2] exit ;
+        [1, 2, 3] (exit) >> system;
     }
 }

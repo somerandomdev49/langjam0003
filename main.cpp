@@ -30,9 +30,12 @@ namespace TokenType {
     const char *to_string(Enum e) {
         static const char *s[] = {
             "error",
+            "eof",
             "identifier",
             "number",
-            "string"
+            "string",
+            ">>",
+            "<<",
         };
 
         return s[e];
@@ -93,7 +96,7 @@ struct Token {
         , value(value) {}
 
     Token(const char *const string)
-        : type(TokenType::number)
+        : type(TokenType::identifier)
         , value({ .string = string }) { }
 
     Token(std::intptr_t integer)
@@ -111,8 +114,11 @@ struct Token {
             TokenType::is_valid(token.type)
             ? token.type == TokenType::number
             ? "number, " + std::to_string(token.value.integer) + "}"
-            : TokenType::to_string((ETokenType)token.type)
-                + ", '"s + token.value.string + "'}"
+            : token.type == TokenType::identifier
+            ? "identifier, "s + token.value.string + "}"
+            : token.type == TokenType::string
+            ? "string, "s + token.value.string + "}"
+            : TokenType::to_string((ETokenType)token.type) + "}"s
             : "'"s + token.type + "'}"
         );
     }
@@ -128,10 +134,8 @@ struct Lexer {
     }
 
     auto peek() -> const Token & {
-        if(buffer == nullptr || buffer->type == TokenType::error) {
-            puts("peek(): making new token");
+        if(buffer == nullptr || buffer->type == TokenType::error)
             buffer = std::make_unique<Token>(get());
-        }
         return *buffer.get();
     }
 
@@ -143,7 +147,8 @@ struct Lexer {
         }
 
         char c;
-        while(std::isspace(c = ins.get()));
+        while(std::isspace(c = ins.peek())) ins.get();
+        if(c == EOF) return { TokenType::eof, {} };
         if(std::isalpha(c) || c == '_') {
             auto used = allocator.used();
             while(std::isalnum(c) || c == '_') {
@@ -151,12 +156,9 @@ struct Lexer {
                 c = ins.peek();
             }
             return { (char*)allocator.data + used };
-        }
-        if(c == EOF) {
-            return { TokenType::eof, {} };
         } else if(c == '"') {
-            c = ins.get();
             auto used = allocator.used();
+            ins.get();
             while(c != '"') {
                 *allocator.allocate<char>(1) = ins.get();
                 c = ins.peek();
@@ -168,43 +170,46 @@ struct Lexer {
         }
         if(std::isdigit(c) || c == '-') {
             bool negative = false;
-            if(c == '-') { negative = true; c = ins.get(); }
-            if(c == '0') {
-                if(ins.peek() == 'x') {
-                    ins.get();
-                    std::size_t value = 0;
-                    while(std::isxdigit(c) || c == '_') {
-                        c = ins.get();
-                        if(c == '_') continue;
-                        if(c > '9') c -= 'A' - 0xA;
-                        else c -= '0';
-                        value = value * 16 + c;
-                        c = ins.peek();
-                    }
-                    return { negative ? (std::intptr_t)value : -(std::intptr_t)value };
-                } else if(ins.peek() == 'o') {
-                    ins.get();
-                    std::size_t value = 0;
-                    while((std::isdigit(c) && c < '8') || c == '_') {
-                        c = ins.get() - '0';
-                        if(c == '_' - '0') continue;
-                        value = value * 8 + c;
-                        c = ins.peek();
-                    }
-                    return { negative ? (std::intptr_t)value : -(std::intptr_t)value };
-                } else if(ins.peek() == 'b') {
-                    ins.get();
-                    std::size_t value = 0;
-                    while((std::isdigit(c) && c < '8') || c == '_') {
-                        c = ins.get() - '0';
-                        if(c == '_' - '0') continue;
-                        value = value * 2 + c;
-                        c = ins.peek();
-                    }
-                    return { negative ? (std::intptr_t)value : -(std::intptr_t)value };
-                }
+            if(c == '-') {
+                negative = true;
+                ins.get();
+                c = ins.peek();
             }
-            ins.get();
+            // if(c == '0') {
+            //     if(ins.peek() == 'x') {
+            //         c = (ins.get(), '0');
+            //         std::size_t value = 0;
+            //         while(std::isxdigit(c) || c == '_') {
+            //             c = ins.get();
+            //             if(c == '_') continue;
+            //             if(c > '9') c -= 'A' - 0xA;
+            //             else c -= '0';
+            //             value = value * 16 + c;
+            //             c = ins.peek();
+            //         }
+            //         return { negative ? (std::intptr_t)value : -(std::intptr_t)value };
+            //     } else if(ins.peek() == 'o') {
+            //         c = (ins.get(), '0');
+            //         std::size_t value = 0;
+            //         while((std::isdigit(c) && c < '8') || c == '_') {
+            //             c -= '0';
+            //             if(c == '_' - '0') continue;
+            //             value = value * 8 + c;
+            //             c = ins.peek();
+            //         }
+            //         return { negative ? (std::intptr_t)value : -(std::intptr_t)value };
+            //     } else if(ins.peek() == 'b') {
+            //         c = (ins.get(), '0');
+            //         std::size_t value = 0;
+            //         while((std::isdigit(c) && c < '8') || c == '_') {
+            //             c = ins.get() - '0';
+            //             if(c == '_' - '0') continue;
+            //             value = value * 2 + c;
+            //             c = ins.peek();
+            //         }
+            //         return { negative ? (std::intptr_t)value : -(std::intptr_t)value };
+            //     }
+            // }
             size_t value = 0;
             while((std::isdigit(c) && c < '8') || c == '_') {
                 c = ins.get() - '0';
@@ -212,12 +217,14 @@ struct Lexer {
                 value = value * 10 + c;
                 c = ins.peek();
             }
-            return { negative ? (std::intptr_t)value : -(std::intptr_t)value };
+            return { negative ? -(std::intptr_t)value : (std::intptr_t)value };
         }
-        if(c == '>' && ins.peek() == '>') return { TokenType::send_to };
-        if(c == '<' && ins.peek() == '<') return { TokenType::send_back };
 
-        return { c };
+        c = ins.get();
+        if(c == '>' && ins.peek() == '>') return { (ins.get(), TokenType::send_to), {} };
+        if(c == '<' && ins.peek() == '<') return { (ins.get(), TokenType::send_back), {} };
+
+        return { c, {} };
     }
 };
 
@@ -256,10 +263,14 @@ namespace ast {
         enum class Type {
             error,
             chain_param,
-            variable
+            variable,
+            number,
+            string
         } type;
         union {
-            size_t parameter; /* chain parameter '%N' */
+            uintptr_t parameter; /* chain parameter '%N' */
+            intptr_t number; /* number 'K' */
+            const char *string; /* string '"S"' */
             const char *variable; /* variable 'X' */
         };
 
@@ -274,6 +285,12 @@ namespace ast {
                 case Type::variable:
                     out << variable;
                     break;
+                case Type::number:
+                    out << number;
+                    break;
+                case Type::string:
+                    out << variable;
+                    break;
             }
         }
     };
@@ -282,23 +299,49 @@ namespace ast {
         std::unordered_set<Tag> pre, post;
         virtual ~Command() = default;
         virtual void output(std::ostream &out) const {
-            out << "        [default command]\n";
+            out << "        [default command]";
+        }
+    protected:
+        void output_pre(std::ostream &out) const {
+            out << "        ";
+            if(!pre.empty()) {
+                out << "[";
+                auto it = pre.begin();
+                out << *it++;
+                while(it != pre.end()) {
+                    out << ", " << *it++;
+                }
+                out << "] ";
+            }
+        }
+
+        void output_post(std::ostream &out) const {
+            if(!post.empty()) {
+                out << " [";
+                auto it = post.begin();
+                out << *it++;
+                while(it != post.end()) {
+                    out << ", " << *it++;
+                }
+                out << "]";
+            }
         }
     };
 
     struct ErrorCommand : Command {
         void output(std::ostream &out) const override {
-            out << "        [error command]\n";
+            out << "        [error command]";
         }
     };
 
     struct SendCommand : Command {
         CString name;
         std::vector<Value> parameters;
+        Value to;
         void output(std::ostream &out) const override {
-            out << "        (" << name << ") ";
+            output_pre(out);
+            out << "(" << name << ") ";
             if(!parameters.empty()) {
-                out << " : ";
                 auto it = parameters.begin();
                 (*it++).output(out);
                 while(it != parameters.end()) {
@@ -306,6 +349,9 @@ namespace ast {
                     (*it++).output(out);
                 }
             }
+            out << " >> ";
+            to.output(out);
+            output_post(out);
         }
     };
 
@@ -323,7 +369,6 @@ namespace ast {
 
         void output(std::ostream &out) const {
             if(!parameters.empty()) {
-                out << " : ";
                 auto it = parameters.begin();
                 out << *it++;
                 while(it != parameters.end()) {
@@ -333,6 +378,7 @@ namespace ast {
             out << " {\n";
             for(const auto &command : commands) {
                 command->output(out);
+                out << ";\n";
             }
             out << "    }\n";
         }
@@ -379,9 +425,12 @@ struct Parser {
 
     template<char T>
     Token expect(Token::Value value = {}) {
-        auto tok = lexer.get();
-        if(tok.type != T) return { T, value };
-        return tok;
+        auto tok = lexer.peek();
+        if(tok.type == T) return lexer.get();
+        error("expected " + (TokenType::is_valid(T)
+            ? std::string(TokenType::to_string((ETokenType)T))
+            : std::string(1, T)) + ", but got " + Token::to_string(tok));
+        return { T, value };
     }
 
     std::string parseName() {
@@ -401,6 +450,16 @@ struct Parser {
                 .type = ast::Value::Type::variable,
                 .variable = copy_(expect<TokenType::identifier>().value.string)
             };
+        } else if(lexer.peek().type == TokenType::string) {
+            return {
+                .type = ast::Value::Type::string,
+                .variable = copy_(expect<TokenType::identifier>().value.string)
+            };
+        } else if(lexer.peek().type == TokenType::number) {
+            return {
+                .type = ast::Value::Type::number,
+                .number = expect<TokenType::number>().value.integer
+            };
         } else if(lexer.peek().type == '%') {
             lexer.get();
             return {
@@ -408,7 +467,7 @@ struct Parser {
                 .parameter = (std::size_t)expect<TokenType::number>({ .integer = 0 }).value.integer
             };
         } else {
-            error("expected a value (variable or %number), but got " + Token::to_string(lexer.get()) + " instead.");
+            error("expected a value (variable, number or %index), but got " + Token::to_string(lexer.peek()) + " instead.");
             return { ast::Value::Type::error };
         }
     }
@@ -424,6 +483,8 @@ struct Parser {
             while(lexer.peek().type != TokenType::send_to) {
                 cmd->parameters.push_back(parseValue());
             }
+            expect<TokenType::send_to>();
+            cmd->to = parseValue();
             ret = std::move(cmd);
         } else {
             error("expected a command, got " + Token::to_string(lexer.peek()) + " instead!");
@@ -444,6 +505,7 @@ struct Parser {
     std::unique_ptr<ast::Command> parseCommand() {
         std::unordered_set<ast::Tag> pre;
         if(lexer.peek().type == '[') {
+            lexer.get();
             while(lexer.peek().type != ']') {
                 pre.insert(expect<TokenType::number>({ .integer = 0 }).value.integer);
                 if(lexer.peek().type == ',') expect<','>();
@@ -455,6 +517,7 @@ struct Parser {
         auto ret = parseCommandBase(std::move(pre));
 
         if(lexer.peek().type == '[') {
+            lexer.get();
             while(lexer.peek().type != ']') {
                 ret->post.insert(expect<TokenType::number>({ .integer = 0 }).value.integer);
                 if(lexer.peek().type == ',') expect<','>();
@@ -476,15 +539,17 @@ struct Parser {
             handler.commands.push_back(parseCommand());
             expect<';'>();
         }
+        expect<'}'>();
     }
 
     void parseActor(ast::Actor &actor) {
         actor.name = copy_(expect<TokenType::identifier>({ .string = "?" }).value.string);
         if(lexer.peek().type == ':') {
-            while(lexer.peek().type != '{') {
+            lexer.get();
+            do {
                 CString var = expect<TokenType::identifier>({ .string = "?" }).value.string;
                 actor.variables.insert(copy_(var));
-            }
+            } while(lexer.peek().type != '{');
         }
         expect<'{'>();
         while(lexer.peek().type != '}') {
@@ -506,11 +571,6 @@ auto main() -> int {
         return 1;
     }
     Lexer lexer{ins};
-    
-    while(lexer.peek().type != TokenType::eof) {
-        std::cout << Token::to_string(lexer.get()) << std::endl;
-    }
-
     StackAllocator allocator;
     Parser parser{lexer, allocator};
     ast::Actor actor;
