@@ -20,7 +20,8 @@ main : output_file {
                 (append) %0 commands >> list;
             }
             (join) " " ofiles >> list,
-            (+) ld " " %0 " -o " output_file;
+            (+) ld " " %0 " -o " output_file >> str,
+            (append) %0 commands >> list,
             << commands;
         } %0 %1, << %0
     }
